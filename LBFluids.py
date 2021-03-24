@@ -17,6 +17,24 @@ def get_velocity(grid, eps=1e-6):
     return directions.T.dot(np.swapaxes(grid, 0, 1)) / (density + eps)
 
 
+def get_curl(velocities, obstacle):
+    # v = P(x,y)i + Q(x,y)j
+    # curl = dQ/dx - dP/dy
+    dQdx = (velocities[1, 2:] - velocities[1, :-2]) / 2
+    dPdy = (velocities[0, :, 2:] - velocities[0, :, :-2]) / 2
+
+    curl = dQdx[:, 1:-1] - dPdy[1:-1]
+    curl = np.pad(curl, 1)
+
+    curl = curl * (1 - obstacle)
+    curl[1:] = curl[1:] * (1 - obstacle[:-1])
+    curl[:-1] = curl[:-1] * (1 - obstacle[1:])
+    curl[:, 1:] = curl[:, 1:] * (1 - obstacle[:, :-1])
+    curl[:, :-1] = curl[:, :-1] * (1 - obstacle[:, 1:])
+
+    return curl
+
+
 def stream(grid):
     rolled_grid = np.zeros_like(grid)
     for j, slice_2d in enumerate(grid):
@@ -60,29 +78,30 @@ left_dirs = [0, 3, 6]
 middle_dirs = [1, 4, 7]
 right_dirs = [2, 5, 8]
 
-Nx, Ny = 200, 40
+max_it, wait_it, interval = 20000, 2000, 200
+Nx, Ny = 200, 80
 omega = 1.95
 Ux = 0.04
 
 initial_velocities = np.zeros((2, Nx, Ny))
-initial_velocities[0] = Ux/100
+initial_velocities[0] = Ux / 100
 
 v_pops = equilibrium(1, initial_velocities) + 1e-1 * np.random.rand(9, Nx, Ny)
 # v_pops[:, Nx // 2 - 5:Nx // 2 + 5, Ny // 2 - 5:Ny // 2 + 5] = 0.4?
 
 wall = np.zeros((Nx, Ny), dtype=int)
-wall = np.array([[(x-Nx//5)**2+(y-Ny//2)**2 < (Ny//5)**2 for y in range(Ny)] for x in range(Nx)], dtype=int)
+wall = np.array([[(x - Nx // 5) ** 2 + (y - Ny // 2) ** 2 < (Ny // 10) ** 2 for y in range(Ny)] for x in range(Nx)],
+                dtype=int)
 wall[-1, :], wall[0, :] = 0, 0  # Left, Right
-wall[:, 0], wall[:, -1] = 1, 1  # Bottom, Top
+wall[:, 0], wall[:, -1] = 0, 0  # Bottom, Top
 
-for i, slice in enumerate(v_pops):
-    v_pops[i][wall.nonzero()] = 0
+v_pops = v_pops * (1 - wall)
 paint(wall)
 
 vmin, vmax = np.min(v_pops.sum(axis=0)) - 1 / Nx / Ny, np.max(v_pops.sum(axis=0)) - 1 / Nx / Ny
 paint(v_pops.sum(axis=0) - 1 / Nx / Ny, vmin=vmin, vmax=vmax)
 
-for i in range(10000):
+for i in range(max_it):
     print(str(i) + " " + str((v_pops > 1e4).any()))
 
     density = get_density(v_pops)
@@ -107,6 +126,7 @@ for i in range(10000):
     # outflow at the right
     v_pops[left_dirs, -1] = v_pops[left_dirs, -2]
 
-    if i % 100 == 0 and i > 2000:
+    if i % interval == 0 and i >= wait_it:
         # paint(velocities[0], vmin=-Ux * 4, vmax=Ux * 4, title=str(i))
-        paint(velocities[1], vmin=-Ux * 2, vmax=Ux * 2, title=str(i))
+        # paint(velocities[1], vmin=-Ux * 2, vmax=Ux * 2, title=str(i))
+        paint(get_curl(velocities, wall), title=str(i), vmin=-0.02, vmax=0.02)
