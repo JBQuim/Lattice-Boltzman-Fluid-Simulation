@@ -78,8 +78,8 @@ left_dirs = [0, 3, 6]
 middle_dirs = [1, 4, 7]
 right_dirs = [2, 5, 8]
 
-max_it, wait_it, interval = 20000, 2000, 200
-Nx, Ny = 200, 80
+max_it, wait_it, interval = 30000, 0, 200
+Nx, Ny = 400, 160
 omega = 1.95
 Ux = 0.04
 
@@ -96,10 +96,10 @@ wall[-1, :], wall[0, :] = 0, 0  # Left, Right
 wall[:, 0], wall[:, -1] = 0, 0  # Bottom, Top
 
 v_pops = v_pops * (1 - wall)
-paint(wall)
+# paint(wall)
 
 vmin, vmax = np.min(v_pops.sum(axis=0)) - 1 / Nx / Ny, np.max(v_pops.sum(axis=0)) - 1 / Nx / Ny
-paint(v_pops.sum(axis=0) - 1 / Nx / Ny, vmin=vmin, vmax=vmax)
+# paint(v_pops.sum(axis=0) - 1 / Nx / Ny, vmin=vmin, vmax=vmax)
 
 for i in range(max_it):
     print(str(i) + " " + str((v_pops > 1e4).any()))
