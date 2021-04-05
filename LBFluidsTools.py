@@ -2,10 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def paint(grid, title="", vmin=None, vmax=None):
+def paint(grid, title="", vmin=None, vmax=None, arrow=None):
     plt.imshow(grid.T, origin='lower', vmin=vmin, vmax=vmax)
     plt.title(title)
     plt.colorbar()
+    if not (arrow is None):
+        x, y, dx, dy = arrow
+        plt.arrow(x, y, dx, dy, length_includes_head=True, color="w", overhang=1, head_width=3)
     plt.show()
 
 
@@ -38,7 +41,7 @@ def curl(velocities, obstacle=None):
 
 
 class D2Q9:
-    def __init__(self, Nx, Ny, omega, Ux, wall=None, w=1e-1):
+    def __init__(self, Nx, Ny, omega, Ux, wall=None, w=1e-3):
         self.left_dirs = [0, 3, 6]
         self.middle_dirs = [1, 4, 7]
         self.right_dirs = [2, 5, 8]
@@ -49,19 +52,22 @@ class D2Q9:
         self.omega = omega
         self.Ux = Ux
 
-        self.density = np.ones((Nx, Ny))
-        self.velocities = np.zeros((2, Nx, Ny))
-        self.velocities[0] = Ux / 100
-        self.v_pops = self.equilibrium(self.density, self.velocities) + w * np.random.rand(9, Nx, Ny)
-
         if wall is None:
             self.wall = np.zeros((Nx, Ny), dtype=int)
         else:
             self.wall = wall
-            self.v_pops *= (1 - wall)
+
+        self.force = np.array([0, 0])
+        # outside the walls the velocity is set to equilibrium with horizontal speed Ux, inside the walls at rest but
+        # with the same density.
+        self.density = np.ones((Nx, Ny))
+        self.velocities = np.zeros((2, Nx, Ny))
+        self.velocities[0] = Ux * (1 - self.wall)
+        self.v_pops = self.equilibrium(self.density, self.velocities) + w * np.random.rand(9, Nx, Ny)
 
         self.yes_mask = wall.nonzero()
         self.no_mask = (1 - wall).nonzero()
+        self.com_x, self.com_y = np.mean(self.yes_mask, axis=1)
 
     def get_density(self):
         return self.v_pops.sum(axis=0)
@@ -93,6 +99,7 @@ class D2Q9:
     def stream(self):
         grid = self.v_pops
         rolled_grid = np.zeros_like(grid)
+
         for j, slice_2d in enumerate(grid):
             rolled_grid[j] = np.roll(slice_2d, self.directions[j], axis=(0, 1))
 
@@ -100,15 +107,15 @@ class D2Q9:
 
     def obstacles(self, post_collision):
         in_wall = self.yes_mask
-        not_wall = self.no_mask
-        pre_collision = self.v_pops
-
-        new_grid = np.zeros_like(pre_collision)
         for j in range(9):
-            new_grid[8 - j][in_wall] = pre_collision[j][in_wall]
-            new_grid[j][not_wall] = post_collision[j][not_wall]
+            post_collision[j][in_wall] = self.v_pops[8-j][in_wall]
 
-        return new_grid
+        return post_collision
+
+    def obstacles2(self, post_collision):
+        in_wall = self.yes_mask
+        post_collision[:, in_wall] = np.flip(self.v_pops, axis=0)[:, in_wall]
+        return post_collision
 
     def step(self):
         density = self.get_density()
@@ -127,6 +134,9 @@ class D2Q9:
 
         # Obstacle
         self.v_pops = self.obstacles(new_pops)
+
+        # Calculate force on object
+        self.force = (self.velocities * self.wall).sum(axis=(1,2))
 
         # Streaming
         self.v_pops = self.stream()
