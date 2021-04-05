@@ -17,6 +17,7 @@ def curl(velocities, obstacle=None):
     Calculates curl of a velocity field.
     velocities: velocity field of size (2, X, Y)
     obstacle: mask of size (X, Y) where there is an obstacle. All adjacent points have 0 curl.
+    Returns an array of shape (X, Y) with the curl at each point.
     """
     if obstacle is None:
         obstacle = np.zeros(velocities.shape[1:])
@@ -58,8 +59,8 @@ class D2Q9:
             self.wall = wall
 
         self.force = np.array([0, 0])
-        # outside the walls the velocity is set to equilibrium with horizontal speed Ux, inside the walls at rest but
-        # with the same density.
+        # outside the walls the velocity is set to equilibrium with horizontal speed Ux, inside the walls at rest
+        # this makes the calculation of the force on the walls convenient
         self.density = np.ones((Nx, Ny))
         self.velocities = np.zeros((2, Nx, Ny))
         self.velocities[0] = Ux * (1 - self.wall)
@@ -112,11 +113,6 @@ class D2Q9:
 
         return post_collision
 
-    def obstacles2(self, post_collision):
-        in_wall = self.yes_mask
-        post_collision[:, in_wall] = np.flip(self.v_pops, axis=0)[:, in_wall]
-        return post_collision
-
     def step(self):
         density = self.get_density()
         self.velocities = self.get_velocity(density=density)
@@ -143,3 +139,62 @@ class D2Q9:
 
         # outflow at the right
         self.v_pops[self.left_dirs, -1] = self.v_pops[self.left_dirs, -2]
+
+
+def naca_4(a, b, c, N=10000):
+    """
+    Generates N points along an airfoil, according to NACA 4 digit specifications.
+    a: First digit
+    b: Second digit
+    c: Third and fourth digits.
+    Output: 4 arrays, xu and yu hold the upper surface coordintaes. xl and yl the lower surface. The x coordinate is
+    scaled so the whole airfoil is between 0 and 1.
+    """
+
+    m = a / 100
+    p = b / 10
+    t = c / 100
+    beta = np.pi * np.arange(N + 1) / N
+    x = 1 / 2 * (1 - np.cos(beta))
+
+    y_t = 5 * t * (0.2969 * x ** (1 / 2) - 0.126 * x - 0.3516 * x ** 2 + 0.2843 * x ** 3 - 0.1036 * x ** 4)
+
+    mask = x > p
+
+    y_c = m / p ** 2 * (2 * p * x - x ** 2)
+    y_c[mask] = (m / (1 - p) ** 2 * ((1 - 2 * p) + 2 * p * x - x ** 2))[mask]
+
+    dy_cdx = 2 * m / p ** 2 * (p - x)
+    dy_cdx[mask] = (2 * m / (1 - p) ** 2 * (p - x))[mask]
+
+    theta = np.arctan(dy_cdx)
+    xu = x - y_t * np.sin(theta)
+    yu = y_c + y_t * np.cos(theta)
+    xl = x + y_t * np.sin(theta)
+    yl = y_c - y_t * np.cos(theta)
+
+    # recentering and rescaling
+    xmin = xu.min()
+    xu -= xmin
+    xl -= xmin
+    xmax = xu.max()
+    yu -= yl.min()
+    yl -= yl.min()
+
+    return xu / xmax, yu / xmax, xl / xmax, yl / xmax
+
+
+def image_naca_4(a, b, c, Nx):
+    """
+    Generates a boolean image of an airfoil, according to NACA specifications. Image is Nx wide.
+    """
+    spacing = 1 / (Nx - 1)
+    x = np.arange(Nx) * spacing
+
+    xu, yu, xl, yl = naca_4(a, b, c)
+    yu = np.interp(x, xu, yu)
+    yl = np.interp(x, xl, yl)
+
+    Ny = int(yu.max() / spacing) + 1
+    grid = np.repeat(np.arange(Ny)[:, np.newaxis], Nx, axis=1) * spacing
+    return (grid >= yl) * (grid <= yu)
